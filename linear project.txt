@@ -1,0 +1,260 @@
+
+import sympy as sp
+from sympy import Matrix
+
+x, t = sp.symbols('x t')
+C1, C2 = sp.symbols('C1 C2')
+y = sp.Function('y')
+Y = sp.Symbol('y')
+
+def get_value(prompt, local_dict=None):
+    val = input(prompt)
+    try:
+        return sp.sympify(val, locals=local_dict)
+    except (sp.SympifyError, ValueError):
+        print("Invalid input! Please enter a number or expression like pi/2.")
+        return get_value(prompt, local_dict)
+
+def read_matrix(prompt="Matrix"):
+    print(f"\nEnter {prompt} rows separated by semicolons (;) ")
+    raw = input(f"{prompt} = ")
+    rows = [list(map(sp.sympify, r.split())) for r in raw.split(';')]
+    return Matrix(rows)
+
+def read_vector(prompt="Vector"):
+    raw = input(f"{prompt} (space-separated) = ")
+    return Matrix(list(map(sp.sympify, raw.split())))
+
+def ref(matrix):
+    M = [row[:] for row in matrix]
+    rows, cols = len(M), len(M[0])
+    r = 0
+    for c in range(cols - 1):
+        pivot = next((i for i in range(r, rows) if abs(M[i][c]) > 1e-10), None)
+        if pivot is None: continue
+        M[r], M[pivot] = M[pivot], M[r]
+        factor = M[r][c]
+        M[r] = [x / factor for x in M[r]]
+        M[r] = [0.0 if abs(x) < 1e-10 else x for x in M[r]]
+        for i in range(r + 1, rows):
+            factor = M[i][c]
+            M[i] = [y - factor * x for x, y in zip(M[r], M[i])]
+            M[i] = [0.0 if abs(y) < 1e-10 else y for y in M[i]]
+        r += 1
+    return M
+
+def rref(matrix):
+    M = [row[:] for row in matrix]
+    rows, cols = len(M), len(M[0])
+    r = 0
+    for c in range(cols - 1):
+        pivot = next((i for i in range(r, rows) if abs(M[i][c]) > 1e-10), None)
+        if pivot is None: continue
+        M[r], M[pivot] = M[pivot], M[r]
+        factor = M[r][c]
+        M[r] = [x / factor for x in M[r]]
+        M[r] = [0.0 if abs(x) < 1e-10 else x for x in M[r]]
+        for i in range(rows):
+            if i != r:
+                fac = M[i][c]
+                M[i] = [y - fac * x for x, y in zip(M[r], M[i])]
+                M[i] = [0.0 if abs(y) < 1e-10 else y for y in M[i]]
+        r += 1
+    return M
+
+def solve_constant_coeff(a, b, c, t0, y_val, dy_val):
+    r = sp.symbols('r')
+    char_eq = a*r**2 + b*r + c
+    roots = sp.solve(char_eq, r)
+    print(f"\nCharacteristic roots: {roots}")
+
+    if len(roots) == 2 and roots[0] != roots[1]:
+        r1, r2 = roots
+        if sp.im(r1) == 0 and sp.im(r2) == 0:
+            y_general = C1*sp.exp(r1*t) + C2*sp.exp(r2*t)
+            case = "Distinct real roots"
+        else:
+            beta = abs(sp.im(roots[0]))
+            y_general = C1*sp.cos(beta*t) + C2*sp.sin(beta*t)
+            case = "Complex conjugate roots"
+    elif len(roots) == 1:
+        r1 = roots[0]
+        if sp.im(r1) == 0:
+            y_general = (C1 + C2*t)*sp.exp(r1*t)
+            case = "Repeated real root"
+        else:
+            beta = abs(sp.im(roots[0]))
+            y_general = (C1 + C2*t)*sp.cos(beta*t) + C2*sp.sin(beta*t)
+            case = "Repeated complex root"
+    else:
+        print("Unexpected root configuration")
+        return
+
+    print(f"\nCase: {case}")
+    print(f"General solution: y(t) = {y_general}")
+
+    eq1 = sp.Eq(y_general.subs(t, t0), y_val)
+    eq2 = sp.Eq(sp.diff(y_general, t).subs(t, t0), dy_val)
+    constants = sp.solve([eq1, eq2], (C1, C2))
+    print(f"\nValues of constants C1 and C2 at t = {t0}: {constants}")
+
+    y_particular = y_general.subs(constants)
+    print(f"\nParticular solution: y(t) = {y_particular}")
+
+def solve_linear():
+    print("\n--- Solving Linear First Order ODE ---")
+    p = get_value("Enter p(x): ", {'x': x})
+    q = get_value("Enter q(x): ", {'x': x})
+    ode = sp.Eq(sp.diff(y(x), x) + p*y(x), q)
+    solution = sp.dsolve(ode)
+    print("\nGeneral Solution:")
+    sp.pprint(solution)
+    ask = input("\nDo you want to find C1? (y/n): ").lower()
+    if ask == 'y':
+        x0 = get_value("Enter x₀: ", {'x': x})
+        y0 = get_value(f"Enter y(x₀): ")
+        rhs = solution.rhs
+        eq_ic = sp.Eq(rhs.subs(x, x0), y0)
+        c_value = sp.solve(eq_ic, C1)
+        if c_value:
+            print("\nValue of C1:")
+            sp.pprint(c_value[0])
+            particular_solution = rhs.subs(C1, c_value[0])
+            print("\nParticular Solution y(x):")
+            sp.pprint(particular_solution)
+
+def solve_separable():
+    print("\n--- Solving Separable First Order ODE ---")
+    fx = get_value("Enter f(x): ", {'x': x})
+    gy = get_value("Enter g(y): ", {'y': Y})
+    gy = gy.subs(Y, y(x))
+    ode = sp.Eq(sp.diff(y(x), x), fx * gy)
+    solution = sp.dsolve(ode)
+    print("\nGeneral Solution:")
+    sp.pprint(solution)
+
+def differential_menu():
+    print("\n--- Differential Equations Menu ---")
+    print("1) First Order ODE (Linear or Separable)")
+    print("2) Second Order Linear ODE with Constant Coefficients")
+    choice = input("Choose option (1/2): ")
+    if choice == '1':
+        print("1) Linear")
+        print("2) Separable")
+        sub = input("Choose (1/2): ")
+        if sub == '1':
+            solve_linear()
+        elif sub == '2':
+            solve_separable()
+    elif choice == '2':
+        a = get_value("Enter a: ")
+        b = get_value("Enter b: ")
+        c = get_value("Enter c: ")
+        t0 = get_value("Enter initial t0: ")
+        y0 = get_value(f"Enter y({t0}): ")
+        dy0 = get_value(f"Enter y'({t0}): ")
+        solve_constant_coeff(a, b, c, t0, y0, dy0)
+
+def linear_algebra_menu():
+    while True:
+        print("\n==== Linear Algebra Toolkit ====")
+        print("1. Determinant")
+        print("2. Solve system")
+        print("3. Linear independence check")
+        print("4. Basis / row / column space")
+        print("5. Eigenvalues & eigenvectors")
+        print("6. Diagonalization")
+        print("7. Matrix algebra")
+        print("8. REF")
+        print("9. RREF")
+        print("0. Back")
+        choice = input("Select option: ").strip()
+        if choice == "0": break
+        elif choice == "1":
+            A = read_matrix()
+            print("\ndet(A) =", A.det())
+        elif choice == "2":
+            print("\nSystem A x = b")
+            A = read_matrix("Matrix A")
+            b = read_vector("Vector b")
+            if A.det() != 0:
+                x = A.solve(b)
+                print("\nUnique solution x =")
+                print(x)
+            else:
+                M = A.row_join(b)
+                rrefM, pivots = M.rref()
+                inconsistent = any(all(v == 0 for v in row[:-1]) and row[-1] != 0 for row in rrefM.tolist())
+                if inconsistent:
+                    print("\nThe system has no solution.")
+                else:
+                    print("\nThe system has infinitely many solutions.")
+        elif choice == "3":
+            A = read_matrix()
+            rank = A.rank()
+            print("\nRank =", rank)
+            print("Number of vectors =", A.shape[1])
+            print("Vectors are linearly independent." if rank == A.shape[1] else "Vectors are linearly dependent.")
+        elif choice == "4":
+            A = read_matrix()
+            print("\nRow space basis:", A.rowspace())
+            print("Column space basis:", A.columnspace())
+            print("Rank =", A.rank())
+        elif choice == "5":
+            A = read_matrix()
+            print("\nEigenvalues:", A.eigenvals())
+            for e in A.eigenvects(): print(e)
+        elif choice == "6":
+            A = read_matrix()
+            try:
+                P, D = A.diagonalize()
+                print("\nMatrix IS diagonalizable.")
+                print("P =", P)
+                print("D =", D)
+                print("Check A = P D P^-1:", P * D * P.inv())
+            except Exception:
+                print("\nMatrix is NOT diagonalizable.")
+        elif choice == "7":
+            print("\nMatrix algebra options: + , - , * , scalar multiplication ")
+            op = input("Choose operation: ").strip()
+            if op in ["+", "-", "*"]:
+                A = read_matrix("Matrix A")
+                B = read_matrix("Matrix B")
+                print("\nResult =")
+                print(A + B if op == "+" else A - B if op == "-" else A * B)
+            elif op.lower() == "scalar":
+                A = read_matrix("Matrix A")
+                k = sp.sympify(input("Enter scalar k = "))
+                print("\nk * A =\n", k*A)
+        elif choice == "8":
+            rows = int(input("Rows: "))
+            cols = int(input("Cols: "))
+            mat = [list(map(float, input(f"Row {i+1}: ").split())) for i in range(rows)]
+            M = ref(mat)
+            print("\nREF:")
+            for row in M: print(*row)
+        elif choice == "9":
+            rows = int(input("Rows: "))
+            cols = int(input("Cols: "))
+            mat = [list(map(float, input(f"Row {i+1}: ").split())) for i in range(rows)]
+            M = rref(mat)
+            print("\nRREF:")
+            for row in M: print(*row)
+
+def main_menu():
+    while True:
+        print("\n======= Main Menu =======")
+        print("1) Differential Equations")
+        print("2) Linear Algebra Toolkit")
+        print("0) Exit")
+        choice = input("Choose option: ").strip()
+        if choice == "0": break
+        elif choice == "1":
+            differential_menu()
+        elif choice == "2":
+            linear_algebra_menu()
+        else:
+            print("Invalid choice. Try again.")
+
+if __name__ == "__main__":
+    main_menu()
